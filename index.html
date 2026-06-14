@@ -5,21 +5,38 @@
   <title>Scanner Papier en PDF Pro</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <!-- PDF -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#007bff">
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-  <!-- OpenCV pour détection de feuille / redressement -->
   <script>
     let cvReady = false;
 
     var Module = {
       onRuntimeInitialized() {
         cvReady = true;
-        document.getElementById("status").innerText = "Moteur scanner prêt ✅";
+        const statusEl = document.getElementById("status");
+        const generateBtn = document.getElementById("generateBtn");
+        if (statusEl) statusEl.innerText = "Moteur scanner prêt ✅";
+        if (generateBtn) {
+          generateBtn.disabled = false;
+          generateBtn.innerText = "Numériser en PDF professionnel";
+        }
       }
     };
   </script>
   <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then((reg) => console.log('Service Worker enregistré !', reg.scope))
+          .catch((err) => console.error('Erreur SW :', err));
+      });
+    }
+  </script>
 
   <style>
     body {
@@ -42,6 +59,7 @@
     h1 {
       margin-bottom: 8px;
       color: #111;
+      font-size: 24px;
     }
 
     p {
@@ -54,15 +72,21 @@
       padding: 14px;
       margin-top: 15px;
       font-size: 16px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
     }
 
     button {
       background: #007bff;
       color: white;
       border: none;
-      border-radius: 8px;
       font-weight: bold;
       cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    button:hover {
+      background: #0056b3;
     }
 
     button:disabled {
@@ -99,12 +123,12 @@
       L’application va recadrer, redresser et nettoyer le document.
     </p>
 
-    <p id="status">Chargement du moteur scanner...</p>
+    <p id="status">Chargement du moteur scanner (OpenCV)...</p>
 
     <input type="file" id="imageInput" accept="image/*" capture="environment">
 
     <select id="mode">
-      <option value="bw">Rendu pro noir/blanc — recommandé</option>
+      <option value="bw">Rendu pro texte net — recommandé</option>
       <option value="gray">Rendu gris — plus naturel</option>
       <option value="color">Garder la couleur</option>
     </select>
@@ -113,7 +137,7 @@
 
     <canvas id="outputCanvas"></canvas>
 
-    <button id="generateBtn">Numériser en PDF professionnel</button>
+    <button id="generateBtn" disabled>Attente du moteur...</button>
 
     <p class="info">
       Astuce : pose la feuille sur une table foncée, prends la photo bien droite, avec beaucoup de lumière.
@@ -132,36 +156,25 @@
 
     imageInput.addEventListener("change", function(event) {
       const file = event.target.files[0];
-
       if (!file) return;
 
       const reader = new FileReader();
-
       reader.onload = function(e) {
         selectedImage = e.target.result;
         preview.src = selectedImage;
         preview.style.display = "block";
       };
-
       reader.readAsDataURL(file);
     });
 
     generateBtn.addEventListener("click", generatePDF);
 
     function orderPoints(points) {
-      let tl = points[0];
-      let tr = points[0];
-      let br = points[0];
-      let bl = points[0];
-
-      for (const p of points) {
-        if (p.x + p.y < tl.x + tl.y) tl = p;
-        if (p.x + p.y > br.x + br.y) br = p;
-        if (p.x - p.y > tr.x - tr.y) tr = p;
-        if (p.x - p.y < bl.x - bl.y) bl = p;
-      }
-
-      return [tl, tr, br, bl];
+      let pts = [...points];
+      pts.sort((a, b) => a.y - b.y);
+      let topList = pts.slice(0, 2).sort((a, b) => a.x - b.x);
+      let bottomList = pts.slice(2, 4).sort((a, b) => b.x - a.x);
+      return [topList[0], topList[1], bottomList[0], bottomList[1]];
     }
 
     function findDocumentCorners(src) {
@@ -173,19 +186,13 @@
 
       cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
       cv.GaussianBlur(gray, blur, new cv.Size(5, 5), 0);
-      cv.Canny(blur, edges, 50, 150);
+      cv.Canny(blur, edges, 75, 200);
 
-      cv.findContours(
-        edges,
-        contours,
-        hierarchy,
-        cv.RETR_EXTERNAL,
-        cv.CHAIN_APPROX_SIMPLE
-      );
+      cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
       let bestPoints = null;
       let maxArea = 0;
-      const minArea = src.cols * src.rows * 0.15;
+      const minArea = src.cols * src.rows * 0.12;
 
       for (let i = 0; i < contours.size(); i++) {
         let contour = contours.get(i);
@@ -194,26 +201,21 @@
         if (area > minArea && area > maxArea) {
           let peri = cv.arcLength(contour, true);
           let approx = new cv.Mat();
-
           cv.approxPolyDP(contour, approx, 0.02 * peri, true);
 
           if (approx.rows === 4) {
             let points = [];
-
             for (let j = 0; j < 4; j++) {
               points.push({
                 x: approx.data32S[j * 2],
                 y: approx.data32S[j * 2 + 1]
               });
             }
-
             bestPoints = points;
             maxArea = area;
           }
-
           approx.delete();
         }
-
         contour.delete();
       }
 
@@ -238,31 +240,13 @@
       const heightB = Math.hypot(tl.x - bl.x, tl.y - bl.y);
       const maxHeight = Math.round(Math.max(heightA, heightB));
 
-      let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
-        tl.x, tl.y,
-        tr.x, tr.y,
-        br.x, br.y,
-        bl.x, bl.y
-      ]);
-
-      let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
-        0, 0,
-        maxWidth - 1, 0,
-        maxWidth - 1, maxHeight - 1,
-        0, maxHeight - 1
-      ]);
+      let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [tl.x, tl.y, tr.x, tr.y, br.x, br.y, bl.x, bl.y]);
+      let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, maxWidth - 1, 0, maxWidth - 1, maxHeight - 1, 0, maxHeight - 1]);
 
       let M = cv.getPerspectiveTransform(srcTri, dstTri);
       let dst = new cv.Mat();
 
-      cv.warpPerspective(
-        src,
-        dst,
-        M,
-        new cv.Size(maxWidth, maxHeight),
-        cv.INTER_LINEAR,
-        cv.BORDER_REPLICATE
-      );
+      cv.warpPerspective(src, dst, M, new cv.Size(maxWidth, maxHeight), cv.INTER_LINEAR, cv.BORDER_REPLICATE);
 
       srcTri.delete();
       dstTri.delete();
@@ -275,81 +259,25 @@
       const mode = modeSelect.value;
 
       if (mode === "color") {
-        return src.clone();
+        let enhancedColor = new cv.Mat();
+        src.convertTo(enhancedColor, -1, 1.3, -20);
+        return enhancedColor;
       }
 
       let gray = new cv.Mat();
       cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
       if (mode === "gray") {
-        let enhanced = new cv.Mat();
-        gray.convertTo(enhanced, -1, 1.25, -10);
+        let enhancedGray = new cv.Mat();
+        gray.convertTo(enhancedGray, -1, 1.3, -15);
         gray.delete();
-        return enhanced;
+        return enhancedGray;
       }
 
-      let blurred = new cv.Mat();
-      let bw = new cv.Mat();
-
-      cv.medianBlur(gray, blurred, 3);
-
-      cv.adaptiveThreshold(
-        blurred,
-        bw,
-        255,
-        cv.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv.THRESH_BINARY,
-        35,
-        15
-      );
-
+      let enhancedBw = new cv.Mat();
+      gray.convertTo(enhancedBw, -1, 1.65, -40);
       gray.delete();
-      blurred.delete();
-
-      return bw;
-    }
-
-    function addCanvasToPDF(canvas) {
-      const { jsPDF } = window.jspdf;
-
-      const imgWidth = canvas.width;
-      const imgHeight = canvas.height;
-
-      const orientation = imgWidth > imgHeight ? "l" : "p";
-
-      const pdf = new jsPDF({
-        orientation: orientation,
-        unit: "mm",
-        format: "a4"
-      });
-
-      const pageWidth = orientation === "l" ? 297 : 210;
-      const pageHeight = orientation === "l" ? 210 : 297;
-
-      const margin = 8;
-      const maxWidth = pageWidth - margin * 2;
-      const maxHeight = pageHeight - margin * 2;
-
-      const ratio = Math.min(maxWidth / imgWidth, maxHeight / imgHeight);
-
-      const finalWidth = imgWidth * ratio;
-      const finalHeight = imgHeight * ratio;
-
-      const x = (pageWidth - finalWidth) / 2;
-      const y = (pageHeight - finalHeight) / 2;
-
-      const imageData = canvas.toDataURL("image/png");
-
-      pdf.addImage(
-        imageData,
-        "PNG",
-        x,
-        y,
-        finalWidth,
-        finalHeight
-      );
-
-      pdf.save("scan_professionnel.pdf");
+      return enhancedBw;
     }
 
     function generatePDF() {
@@ -359,12 +287,7 @@
       }
 
       if (!cvReady) {
-        alert("Le moteur scanner n'est pas encore chargé. Attends quelques secondes.");
-        return;
-      }
-
-      if (!window.jspdf) {
-        alert("La bibliothèque PDF n'est pas chargée.");
+        alert("Le moteur scanner n'est pas prêt.");
         return;
       }
 
@@ -372,56 +295,84 @@
       generateBtn.innerText = "Numérisation en cours...";
 
       const img = new Image();
+      img.src = selectedImage;
 
       img.onload = function() {
+        let src = null;
+        let scanned = null;
+        let enhanced = null;
+
         try {
           const inputCanvas = document.getElementById("inputCanvas");
           const inputCtx = inputCanvas.getContext("2d");
 
           inputCanvas.width = img.naturalWidth;
           inputCanvas.height = img.naturalHeight;
-
           inputCtx.drawImage(img, 0, 0);
 
-          let src = cv.imread(inputCanvas);
+          src = cv.imread(inputCanvas);
 
           let corners = findDocumentCorners(src);
-          let scanned;
 
           if (corners) {
             scanned = perspectiveTransform(src, corners);
           } else {
             scanned = src.clone();
-            alert("Feuille non détectée automatiquement. Le PDF sera généré sans redressement.");
+            // L'alerte ne bloque plus le flux d'exécution principal
+            setTimeout(() => { 
+              alert("Feuille non détectée. Rendu généré à plat avec effet scanner."); 
+            }, 50);
           }
 
-          let enhanced = enhanceDocument(scanned);
+          // Application des filtres de nettoyage pro
+          enhanced = enhanceDocument(scanned);
 
           const outputCanvas = document.getElementById("outputCanvas");
           cv.imshow(outputCanvas, enhanced);
 
-          addCanvasToPDF(outputCanvas);
+          // Génération immédiate du PDF à partir du canvas de sortie
+          const { jsPDF } = window.jspdf;
+          const imgWidth = outputCanvas.width;
+          const imgHeight = outputCanvas.height;
+          const orientation = imgWidth > imgHeight ? "l" : "p";
 
-          src.delete();
-          scanned.delete();
-          enhanced.delete();
+          const pdf = new jsPDF({
+            orientation: orientation,
+            unit: "mm",
+            format: "a4"
+          });
+
+          const pageWidth = orientation === "l" ? 297 : 210;
+          const pageHeight = orientation === "l" ? 210 : 297;
+
+          const margin = 6;
+          const maxWidth = pageWidth - margin * 2;
+          const maxHeight = pageHeight - margin * 2;
+
+          const ratio = Math.min(maxWidth / imgWidth, maxHeight / imgHeight);
+          const finalWidth = imgWidth * ratio;
+          const finalHeight = imgHeight * ratio;
+
+          const x = (pageWidth - finalWidth) / 2;
+          const y = (pageHeight - finalHeight) / 2;
+
+          const imageData = outputCanvas.toDataURL("image/jpeg", 0.92);
+
+          pdf.addImage(imageData, "JPEG", x, y, finalWidth, finalHeight, undefined, 'FAST');
+          pdf.save("scan_professionnel.pdf");
 
         } catch (error) {
           console.error(error);
-          alert("Erreur pendant la numérisation.");
+          alert("Erreur lors de la création du PDF.");
+        } finally {
+          if (src) src.delete();
+          if (scanned) scanned.delete();
+          if (enhanced) enhanced.delete();
+
+          generateBtn.disabled = false;
+          generateBtn.innerText = "Numériser en PDF professionnel";
         }
-
-        generateBtn.disabled = false;
-        generateBtn.innerText = "Numériser en PDF professionnel";
       };
-
-      img.onerror = function() {
-        alert("Impossible de lire la photo.");
-        generateBtn.disabled = false;
-        generateBtn.innerText = "Numériser en PDF professionnel";
-      };
-
-      img.src = selectedImage;
     }
   </script>
 
