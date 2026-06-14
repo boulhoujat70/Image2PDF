@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Image vers PDF</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Librairie PDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f4;
+      padding: 30px;
+      text-align: center;
+    }
+
+    .box {
+      background: white;
+      max-width: 500px;
+      margin: auto;
+      padding: 25px;
+      border-radius: 12px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.1);
+    }
+
+    h1 {
+      font-size: 24px;
+      margin-bottom: 10px;
+    }
+
+    input {
+      margin: 20px 0;
+    }
+
+    img {
+      max-width: 100%;
+      margin-top: 15px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+    }
+
+    button {
+      background: #111;
+      color: white;
+      border: none;
+      padding: 14px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      margin-top: 20px;
+      width: 100%;
+    }
+
+    button:hover {
+      background: #333;
+    }
+
+    .info {
+      font-size: 14px;
+      color: #666;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="box">
+    <h1>Transformer une image en PDF</h1>
+    <p>Ajoute une image de facture, reçu ou document.</p>
+
+    <input type="file" id="imageInput" accept="image/*">
+
+    <div>
+      <img id="preview" style="display:none;">
+    </div>
+
+    <button onclick="generatePDF()">Générer le PDF</button>
+
+    <p class="info">Le fichier est converti directement dans ton navigateur.</p>
+  </div>
+
+  <script>
+    let selectedImage = null;
+
+    const imageInput = document.getElementById("imageInput");
+    const preview = document.getElementById("preview");
+
+    imageInput.addEventListener("change", function(event) {
+      const file = event.target.files[0];
+
+      if (!file) return;
+
+      const reader = new FileReader();
+
+      reader.onload = function(e) {
+        selectedImage = e.target.result;
+        preview.src = selectedImage;
+        preview.style.display = "block";
+      };
+
+      reader.readAsDataURL(file);
+    });
+
+    async function generatePDF() {
+      if (!selectedImage) {
+        alert("Ajoute d'abord une image.");
+        return;
+      }
+
+      const { jsPDF } = window.jspdf;
+
+      const pdf = new jsPDF("p", "mm", "a4");
+
+      const img = new Image();
+      img.src = selectedImage;
+
+      img.onload = function() {
+        const pageWidth = 210;
+        const pageHeight = 297;
+
+        const margin = 10;
+        const maxWidth = pageWidth - margin * 2;
+        const maxHeight = pageHeight - margin * 2;
+
+        const imgWidth = img.width;
+        const imgHeight = img.height;
+
+        const ratio = Math.min(maxWidth / imgWidth, maxHeight / imgHeight);
+
+        const finalWidth = imgWidth * ratio;
+        const finalHeight = imgHeight * ratio;
+
+        const x = (pageWidth - finalWidth) / 2;
+        const y = (pageHeight - finalHeight) / 2;
+
+        pdf.addImage(selectedImage, "JPEG", x, y, finalWidth, finalHeight);
+
+        pdf.save("facture.pdf");
+      };
+    }
+  </script>
+
+</body>
+</html>
