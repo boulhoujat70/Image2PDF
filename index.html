@@ -132,8 +132,7 @@
       canvas.width = img.naturalWidth || img.width;
       canvas.height = img.naturalHeight || img.height;
 
-      // Filtres CSS professionnels : augmentation forte du contraste pour blanchir le fond, 
-      // ajustement de la luminosité et légère désaturation pour nettoyer les ombres.
+      // Filtres CSS professionnels pour blanchir le fond et lisser les tracés de stylo
       ctx.filter = "contrast(180%) brightness(120%) grayscale(10%)";
       
       // Dessin de l'image sur le canvas avec les filtres appliqués
@@ -169,18 +168,37 @@
           const pageWidth = orientation === "l" ? 297 : 210;
           const pageHeight = orientation === "l" ? 210 : 297;
 
-          // Marges de sécurité propres de 5mm
+          // Marges de sécurité de 5mm
           const margin = 5;
           const maxWidth = pageWidth - margin * 2;
           const maxHeight = pageHeight - margin * 2;
 
-          // Calcul du ratio pour adapter l'image à la page sans la déformer
+          // Calcul du ratio pour adapter l'image sans déformation
           const ratio = Math.min(maxWidth / imgWidth, maxHeight / imgHeight);
           const finalWidth = imgWidth * ratio;
           const finalHeight = imgHeight * ratio;
 
-          // Centrage de l'image numérisée
+          // Centrage de l'image
           const x = (pageWidth - finalWidth) / 2;
           const y = (pageHeight - finalHeight) / 2;
 
-          // Ajout de l'
+          // Ajout de l'image optimisée et sauvegarde
+          pdf.addImage(processedImageData, "JPEG", x, y, finalWidth, finalHeight, undefined, 'FAST');
+          pdf.save("document_scan_hd.pdf");
+
+          // Remise à l'état initial du bouton
+          generateBtn.disabled = false;
+          generateBtn.innerText = "Numériser et Générer le PDF";
+        });
+      };
+
+      img.onerror = function() {
+        alert("Erreur lors du traitement de l'image.");
+        generateBtn.disabled = false;
+        generateBtn.innerText = "Numériser et Générer le PDF";
+      };
+    }
+  </script>
+
+</body>
+</html>
