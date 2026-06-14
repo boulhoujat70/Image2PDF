@@ -5,6 +5,7 @@
   <title>Scanner de Documents en PDF HD</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+  <!-- Bibliothèque PDF -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <style>
@@ -60,15 +61,10 @@
       font-weight: 600;
       margin-top: 20px;
       width: 100%;
-      transition: background 0.2s, transform 0.1s;
     }
 
     button:hover {
       background: #0056b3;
-    }
-
-    button:active {
-      transform: scale(0.98);
     }
 
     button:disabled {
@@ -83,6 +79,7 @@
     }
   </style>
 </head>
+
 <body>
 
   <div class="box">
@@ -113,14 +110,21 @@
 
     imageInput.addEventListener("change", function(event) {
       const file = event.target.files[0];
-      if (!file) return;
+
+      if (!file) {
+        selectedImage = null;
+        preview.style.display = "none";
+        return;
+      }
 
       const reader = new FileReader();
+
       reader.onload = function(e) {
         selectedImage = e.target.result;
         preview.src = selectedImage;
         preview.style.display = "block";
       };
+
       reader.readAsDataURL(file);
     });
 
@@ -128,75 +132,85 @@
       const canvas = document.getElementById("processingCanvas");
       const ctx = canvas.getContext("2d");
 
-      // On préserve la résolution maximale d'origine de la photo
       canvas.width = img.naturalWidth || img.width;
       canvas.height = img.naturalHeight || img.height;
 
-      // Filtres CSS professionnels pour blanchir le fond et lisser les tracés de stylo
       ctx.filter = "contrast(180%) brightness(120%) grayscale(10%)";
-      
-      // Dessin de l'image sur le canvas avec les filtres appliqués
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-      // Exportation en JPEG haute qualité (95%)
-      callback(canvas.toDataURL("image/jpeg", 0.95));
+      const processedImage = canvas.toDataURL("image/jpeg", 0.95);
+      callback(processedImage);
     }
 
-    async function generatePDF() {
+    function generatePDF() {
       if (!selectedImage) {
         alert("Ajoute ou prends d'abord une photo.");
+        return;
+      }
+
+      if (!window.jspdf) {
+        alert("Erreur : la bibliothèque PDF n'est pas chargée. Vérifie ta connexion internet.");
         return;
       }
 
       generateBtn.disabled = true;
       generateBtn.innerText = "Optimisation HD en cours...";
 
-      const { jsPDF } = window.jspdf;
       const img = new Image();
-      img.src = selectedImage;
 
       img.onload = function() {
-        // Lancement du traitement de l'image
         enhanceImage(img, function(processedImageData) {
+          const { jsPDF } = window.jspdf;
+
           const imgWidth = img.naturalWidth || img.width;
           const imgHeight = img.naturalHeight || img.height;
 
-          // Détection automatique du format (Portrait ou Paysage)
           const orientation = imgWidth > imgHeight ? "l" : "p";
-          const pdf = new jsPDF(orientation, "mm", "a4");
+
+          const pdf = new jsPDF({
+            orientation: orientation,
+            unit: "mm",
+            format: "a4"
+          });
 
           const pageWidth = orientation === "l" ? 297 : 210;
           const pageHeight = orientation === "l" ? 210 : 297;
 
-          // Marges de sécurité de 5mm
           const margin = 5;
           const maxWidth = pageWidth - margin * 2;
           const maxHeight = pageHeight - margin * 2;
 
-          // Calcul du ratio pour adapter l'image sans déformation
           const ratio = Math.min(maxWidth / imgWidth, maxHeight / imgHeight);
+
           const finalWidth = imgWidth * ratio;
           const finalHeight = imgHeight * ratio;
 
-          // Centrage de l'image
           const x = (pageWidth - finalWidth) / 2;
           const y = (pageHeight - finalHeight) / 2;
 
-          // Ajout de l'image optimisée et sauvegarde
-          pdf.addImage(processedImageData, "JPEG", x, y, finalWidth, finalHeight, undefined, 'FAST');
-          pdf.save("document_scan_hd.pdf");
+          pdf.addImage(
+            processedImageData,
+            "JPEG",
+            x,
+            y,
+            finalWidth,
+            finalHeight
+          );
 
-          // Remise à l'état initial du bouton
+          pdf.save("document_scanner_hd.pdf");
+
           generateBtn.disabled = false;
           generateBtn.innerText = "Numériser et Générer le PDF";
         });
       };
 
       img.onerror = function() {
-        alert("Erreur lors du traitement de l'image.");
+        alert("Erreur : impossible de charger l'image.");
         generateBtn.disabled = false;
         generateBtn.innerText = "Numériser et Générer le PDF";
       };
+
+      img.src = selectedImage;
     }
   </script>
 
