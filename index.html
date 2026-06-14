@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Scanner de Documents en PDF</title>
+  <title>Scanner de Documents en PDF HD</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -87,7 +87,7 @@
 
   <div class="box">
     <h1>Scanner une page manuscrite</h1>
-    <p>Prends en photo ton document écrit au stylo pour le convertir en PDF net et propre.</p>
+    <p>Prends en photo ton document écrit au stylo pour le convertir en PDF net, lisse et professionnel.</p>
 
     <div class="file-input-wrapper">
       <input type="file" id="imageInput" accept="image/*">
@@ -99,7 +99,7 @@
 
     <button id="generateBtn" onclick="generatePDF()">Numériser et Générer le PDF</button>
 
-    <p class="info">Le traitement "effet scanner" est fait localement et respecte la confidentialité de tes données.</p>
+    <p class="info">L'optimisation "effet scanner HD" est faite localement dans ton navigateur.</p>
   </div>
 
   <canvas id="processingCanvas" style="display:none;"></canvas>
@@ -110,8 +110,6 @@
     const imageInput = document.getElementById("imageInput");
     const preview = document.getElementById("preview");
     const generateBtn = document.getElementById("generateBtn");
-    const canvas = document.getElementById("processingCanvas");
-    const ctx = canvas.getContext("2d");
 
     imageInput.addEventListener("change", function(event) {
       const file = event.target.files[0];
@@ -126,61 +124,23 @@
       reader.readAsDataURL(file);
     });
 
-    function enhanceImage(img) {
-      // Ajuste la taille du canvas à celle de l'image d'origine pour ne pas perdre en qualité
-      canvas.width = img.width;
-      canvas.height = img.height;
+    function enhanceImage(img, callback) {
+      const canvas = document.getElementById("processingCanvas");
+      const ctx = canvas.getContext("2d");
+
+      // On préserve la résolution maximale d'origine de la photo
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+
+      // Filtres CSS professionnels : augmentation forte du contraste pour blanchir le fond, 
+      // ajustement de la luminosité et légère désaturation pour nettoyer les ombres.
+      ctx.filter = "contrast(180%) brightness(120%) grayscale(10%)";
       
-      // Dessine l'image de base
-      ctx.drawImage(img, 0, 0);
-      
-      // Récupère les pixels pour appliquer le filtre magique "Page Blanche / Stylo"
-      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imgData.data;
+      // Dessin de l'image sur le canvas avec les filtres appliqués
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-      // Paramètres d'ajustement du contraste (valeurs optimales pour du texte)
-      const contrast = 60; // Augmente le contraste de manière agressive
-      const brightness = 20; // Éclaircit le fond
-      const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
-
-      for (let i = 0; i < data.length; i += 4) {
-        let r = data[i];
-        let g = data[i+1];
-        let b = data[i+2];
-
-        // 1. Application de la luminosité
-        r += brightness;
-        g += brightness;
-        b += brightness;
-
-        // 2. Application du contraste fort
-        r = factor * (r - 128) + 128;
-        g = factor * (g - 128) + 128;
-        b = factor * (b - 128) + 128;
-
-        // 3. Seuil dynamique pour blanchir le papier gris et noircir/bleuir le stylo
-        // On calcule la luminance du pixel
-        let v = (0.2126 * r + 0.7152 * g + 0.0722 * b);
-        
-        if (v > 160) { 
-          // Si le pixel est plutôt clair (le fond de la feuille), on le force en blanc pur
-          r = 255; g = 255; b = 255;
-        } else {
-          // Si le pixel est sombre (le stylo), on accentue sa couleur d'origine (bleu ou noir)
-          r = Math.max(0, r - 40);
-          g = Math.max(0, g - 40);
-          b = Math.min(255, b + 10); // Laisse une petite chance au bleu du stylo de ressortir
-        }
-
-        // Anti-débordement (0-255)
-        data[i] = Math.min(255, Math.max(0, r));
-        data[i+1] = Math.min(255, Math.max(0, g));
-        data[i+2] = Math.min(255, Math.max(0, b));
-      }
-
-      // Réinjecte les pixels modifiés dans le canvas
-      ctx.putImageData(imgData, 0, 0);
-      return canvas.toDataURL("image/jpeg", 0.9);
+      // Exportation en JPEG haute qualité (95%)
+      callback(canvas.toDataURL("image/jpeg", 0.95));
     }
 
     async function generatePDF() {
@@ -190,53 +150,37 @@
       }
 
       generateBtn.disabled = true;
-      generateBtn.innerText = "Nettoyage du document...";
+      generateBtn.innerText = "Optimisation HD en cours...";
 
       const { jsPDF } = window.jspdf;
       const img = new Image();
       img.src = selectedImage;
 
       img.onload = function() {
-        // Application du filtre de numérisation professionnelle
-        const processedImageData = enhanceImage(img);
+        // Lancement du traitement de l'image
+        enhanceImage(img, function(processedImageData) {
+          const imgWidth = img.naturalWidth || img.width;
+          const imgHeight = img.naturalHeight || img.height;
 
-        const imgWidth = img.width;
-        const imgHeight = img.height;
+          // Détection automatique du format (Portrait ou Paysage)
+          const orientation = imgWidth > imgHeight ? "l" : "p";
+          const pdf = new jsPDF(orientation, "mm", "a4");
 
-        // Orientation intelligente
-        const orientation = imgWidth > imgHeight ? "l" : "p";
-        const pdf = new jsPDF(orientation, "mm", "a4");
+          const pageWidth = orientation === "l" ? 297 : 210;
+          const pageHeight = orientation === "l" ? 210 : 297;
 
-        const pageWidth = orientation === "l" ? 297 : 210;
-        const pageHeight = orientation === "l" ? 210 : 297;
+          // Marges de sécurité propres de 5mm
+          const margin = 5;
+          const maxWidth = pageWidth - margin * 2;
+          const maxHeight = pageHeight - margin * 2;
 
-        // Marges minimales pour un look document propre (5mm)
-        const margin = 5;
-        const maxWidth = pageWidth - margin * 2;
-        const maxHeight = pageHeight - margin * 2;
+          // Calcul du ratio pour adapter l'image à la page sans la déformer
+          const ratio = Math.min(maxWidth / imgWidth, maxHeight / imgHeight);
+          const finalWidth = imgWidth * ratio;
+          const finalHeight = imgHeight * ratio;
 
-        const ratio = Math.min(maxWidth / imgWidth, maxHeight / imgHeight);
-        const finalWidth = imgWidth * ratio;
-        const finalHeight = imgHeight * ratio;
+          // Centrage de l'image numérisée
+          const x = (pageWidth - finalWidth) / 2;
+          const y = (pageHeight - finalHeight) / 2;
 
-        const x = (pageWidth - finalWidth) / 2;
-        const y = (pageHeight - finalHeight) / 2;
-
-        // Ajout de l'image nettoyée au PDF
-        pdf.addImage(processedImageData, "JPEG", x, y, finalWidth, finalHeight);
-        pdf.save("scan_document.pdf");
-
-        generateBtn.disabled = false;
-        generateBtn.innerText = "Numériser et Générer le PDF";
-      };
-
-      img.onerror = function() {
-        alert("Erreur lors du traitement de l'image.");
-        generateBtn.disabled = false;
-        generateBtn.innerText = "Numériser et Générer le PDF";
-      };
-    }
-  </script>
-
-</body>
-</html>
+          // Ajout de l'
