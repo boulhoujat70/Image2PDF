@@ -5,12 +5,11 @@
   <title>Scanner de Documents en PDF HD</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <!-- Bibliothèque PDF -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <style>
     body {
-      font-family: 'Segoe UI', Arial, sans-serif;
+      font-family: Arial, sans-serif;
       background: #f0f2f5;
       padding: 30px;
       text-align: center;
@@ -19,7 +18,7 @@
 
     .box {
       background: white;
-      max-width: 550px;
+      max-width: 650px;
       margin: auto;
       padding: 30px;
       border-radius: 16px;
@@ -27,27 +26,23 @@
     }
 
     h1 {
-      font-size: 24px;
-      margin-bottom: 5px;
       color: #111;
     }
 
     p {
       color: #666;
-      font-size: 15px;
     }
 
-    .file-input-wrapper {
+    input {
       margin: 25px 0;
     }
 
     img {
       max-width: 100%;
-      max-height: 350px;
+      max-height: 400px;
       margin-top: 15px;
-      border: 2px solid #e0e0e0;
+      border: 2px solid #ddd;
       border-radius: 8px;
-      object-fit: contain;
     }
 
     button {
@@ -57,8 +52,8 @@
       padding: 16px 20px;
       border-radius: 8px;
       cursor: pointer;
-      font-size: 16px;
-      font-weight: 600;
+      font-size: 17px;
+      font-weight: bold;
       margin-top: 20px;
       width: 100%;
     }
@@ -68,7 +63,7 @@
     }
 
     button:disabled {
-      background: #ccc;
+      background: #aaa;
       cursor: not-allowed;
     }
 
@@ -84,22 +79,22 @@
 
   <div class="box">
     <h1>Scanner une page manuscrite</h1>
-    <p>Prends en photo ton document écrit au stylo pour le convertir en PDF net, lisse et professionnel.</p>
+    <p>Prends en photo ton document pour le convertir en PDF net, propre et lisible.</p>
 
-    <div class="file-input-wrapper">
-      <input type="file" id="imageInput" accept="image/*">
-    </div>
+    <input type="file" id="imageInput" accept="image/*" capture="environment">
 
     <div>
       <img id="preview" style="display:none;">
     </div>
 
-    <button id="generateBtn" onclick="generatePDF()">Numériser et Générer le PDF</button>
+    <button id="generateBtn">Numériser et Générer le PDF</button>
 
-    <p class="info">L'optimisation "effet scanner HD" est faite localement dans ton navigateur.</p>
+    <p class="info">
+      Traitement local dans ton navigateur : recadrage automatique + amélioration légère.
+    </p>
   </div>
 
-  <canvas id="processingCanvas" style="display:none;"></canvas>
+  <canvas id="canvas" style="display:none;"></canvas>
 
   <script>
     let selectedImage = null;
@@ -111,11 +106,7 @@
     imageInput.addEventListener("change", function(event) {
       const file = event.target.files[0];
 
-      if (!file) {
-        selectedImage = null;
-        preview.style.display = "none";
-        return;
-      }
+      if (!file) return;
 
       const reader = new FileReader();
 
@@ -128,42 +119,126 @@
       reader.readAsDataURL(file);
     });
 
-    function enhanceImage(img, callback) {
-      const canvas = document.getElementById("processingCanvas");
+    generateBtn.addEventListener("click", generatePDF);
+
+    function autoCropWhite(canvas) {
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const width = canvas.width;
+      const height = canvas.height;
+      const imageData = ctx.getImageData(0, 0, width, height);
+      const data = imageData.data;
+
+      let top = null;
+      let bottom = null;
+      let left = null;
+      let right = null;
+
+      const threshold = 245;
+
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const index = (y * width + x) * 4;
+          const r = data[index];
+          const g = data[index + 1];
+          const b = data[index + 2];
+
+          const isNotWhite = r < threshold || g < threshold || b < threshold;
+
+          if (isNotWhite) {
+            if (top === null) top = y;
+            bottom = y;
+
+            if (left === null || x < left) left = x;
+            if (right === null || x > right) right = x;
+          }
+        }
+      }
+
+      if (top === null) {
+        return canvas;
+      }
+
+      const padding = 40;
+
+      left = Math.max(0, left - padding);
+      top = Math.max(0, top - padding);
+      right = Math.min(width, right + padding);
+      bottom = Math.min(height, bottom + padding);
+
+      const cropWidth = right - left;
+      const cropHeight = bottom - top;
+
+      const croppedCanvas = document.createElement("canvas");
+      const croppedCtx = croppedCanvas.getContext("2d");
+
+      croppedCanvas.width = cropWidth;
+      croppedCanvas.height = cropHeight;
+
+      croppedCtx.fillStyle = "white";
+      croppedCtx.fillRect(0, 0, cropWidth, cropHeight);
+
+      croppedCtx.drawImage(
+        canvas,
+        left,
+        top,
+        cropWidth,
+        cropHeight,
+        0,
+        0,
+        cropWidth,
+        cropHeight
+      );
+
+      return croppedCanvas;
+    }
+
+    function enhanceImage(img) {
+      const canvas = document.getElementById("canvas");
       const ctx = canvas.getContext("2d");
 
-      canvas.width = img.naturalWidth || img.width;
-      canvas.height = img.naturalHeight || img.height;
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
 
-      ctx.filter = "contrast(180%) brightness(120%) grayscale(10%)";
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.imageSmoothingEnabled = false;
+
+      /*
+        Important :
+        filtre léger seulement.
+        Avant, contrast 180% + brightness 120% rendait le document trop blanc et flou.
+      */
+      ctx.filter = "contrast(115%) brightness(105%)";
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-      const processedImage = canvas.toDataURL("image/jpeg", 0.95);
-      callback(processedImage);
+      return autoCropWhite(canvas);
     }
 
     function generatePDF() {
       if (!selectedImage) {
-        alert("Ajoute ou prends d'abord une photo.");
+        alert("Ajoute d'abord une photo.");
         return;
       }
 
       if (!window.jspdf) {
-        alert("Erreur : la bibliothèque PDF n'est pas chargée. Vérifie ta connexion internet.");
+        alert("Erreur : jsPDF n'est pas chargé. Vérifie ta connexion internet.");
         return;
       }
 
       generateBtn.disabled = true;
-      generateBtn.innerText = "Optimisation HD en cours...";
+      generateBtn.innerText = "Génération du PDF...";
 
       const img = new Image();
 
       img.onload = function() {
-        enhanceImage(img, function(processedImageData) {
+        try {
+          const processedCanvas = enhanceImage(img);
+
           const { jsPDF } = window.jspdf;
 
-          const imgWidth = img.naturalWidth || img.width;
-          const imgHeight = img.naturalHeight || img.height;
+          const imgWidth = processedCanvas.width;
+          const imgHeight = processedCanvas.height;
 
           const orientation = imgWidth > imgHeight ? "l" : "p";
 
@@ -176,7 +251,8 @@
           const pageWidth = orientation === "l" ? 297 : 210;
           const pageHeight = orientation === "l" ? 210 : 297;
 
-          const margin = 5;
+          const margin = 6;
+
           const maxWidth = pageWidth - margin * 2;
           const maxHeight = pageHeight - margin * 2;
 
@@ -188,9 +264,15 @@
           const x = (pageWidth - finalWidth) / 2;
           const y = (pageHeight - finalHeight) / 2;
 
+          /*
+            PNG = meilleure qualité pour texte, facture, manuscrit.
+            C'est plus lourd qu'un JPEG, mais beaucoup plus net.
+          */
+          const imageData = processedCanvas.toDataURL("image/png");
+
           pdf.addImage(
-            processedImageData,
-            "JPEG",
+            imageData,
+            "PNG",
             x,
             y,
             finalWidth,
@@ -199,13 +281,17 @@
 
           pdf.save("document_scanner_hd.pdf");
 
-          generateBtn.disabled = false;
-          generateBtn.innerText = "Numériser et Générer le PDF";
-        });
+        } catch (error) {
+          console.error(error);
+          alert("Erreur pendant la génération du PDF.");
+        }
+
+        generateBtn.disabled = false;
+        generateBtn.innerText = "Numériser et Générer le PDF";
       };
 
       img.onerror = function() {
-        alert("Erreur : impossible de charger l'image.");
+        alert("Impossible de charger l'image.");
         generateBtn.disabled = false;
         generateBtn.innerText = "Numériser et Générer le PDF";
       };
